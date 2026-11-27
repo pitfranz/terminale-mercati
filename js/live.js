@@ -22,6 +22,8 @@ export const LIVE_ON = !!(LIVE_URL || WORKER || CB_ON);
 
 // celle da evidenziare nel prossimo ridisegno
 export const FLASH = new Set();
+const liveQuotes = new WeakMap();
+export const getLiveQuote = market => liveQuotes.get(market);
 export const flashCls = m => FLASH.has(m.symbol) ? (m.change >= 0 ? ' flu' : ' fld') : '';
 
 // dettaglio attualmente aperto (per aggiornare prezzo e ultima barra del grafico)
@@ -42,6 +44,8 @@ export function applyQuote(sym, p, c, pc, ts, fromPriceOnly) {
     c = p - m.prevClose; pc = (p / m.prevClose - 1) * 100;
   }
   if (!isN(c) || !isN(pc)) return false;
+  const quote = liveQuotes.get(m);
+  if (!quote || t >= quote.time) liveQuotes.set(m, { price: p, time: t });
   pc = Math.round(pc * 100) / 100;
   if (m.price === p && m.changePct === pc) return false;
   const old = m.price;
@@ -173,6 +177,7 @@ async function tick() {
       shown = Math.max(shown, t || Date.now());
       paintLabel();
       if (ch) refreshUI();
+      cur?.updateQuote?.();
     } else {
       fails++;
     }

@@ -32,11 +32,61 @@ export function mountChart(box,spec){box.replaceChildren();
     if(!t&&ss[0]&&ss[0].s.data.length)t=ss[0].s.data[ss[0].s.data.length-1].time;
     const tl=typeof t==='number'?fmtWith(spec.intraday?fDT:fDate,t*1000):(typeof t==='string'?t.split('-').reverse().join('/'):'');
     lg.append(h('span',{class:'mut',text:tl+'  '}),...parts)};
-  chart.subscribeCrosshairMove(show);show(null);
+  let crosshairTime;
+  chart.subscribeCrosshairMove(param => { crosshairTime = param?.time; show(param); });
+  show(null);
   const ro=new ResizeObserver(()=>{const w=box.clientWidth;if(w>0)chart.applyOptions({width:w,height:box.clientHeight||hh})});ro.observe(box);
   let pls=[];const lc={acc:cssColor('--acc'),up,down,mut};
-  return {destroy(){try{ro.disconnect();chart.remove()}catch(e){}},updateLast(p){try{const s0=ss[0];if(!s0||spec.pct||!isN(p))return;const d=s0.s.data;if(!d.length)return;const l=d[d.length-1];const nb=s0.s.kind==='candle'?{time:l.time,open:l.open,high:Math.max(l.high,p),low:Math.min(l.low,p),close:p}:{time:l.time,value:p};s0.x.update(nb);d[d.length-1]=Object.assign({},l,nb,{value:p,close:p})}catch(e){}},setLevels(list){try{pls.forEach(p=>ss[0].x.removePriceLine(p));pls=(list||[]).map(l=>ss[0].x.createPriceLine({price:l.price,color:lc[l.color]||mut,lineWidth:1,lineStyle:2,axisLabelVisible:true,title:l.title}))}catch(e){}}}}
-export function histSeries(hist,range){const intra=range==='1G'||range==='5G';let rows=(intra?hist.intraday:hist.daily)||[];
+  return {destroy(){try{ro.disconnect();chart.remove()}catch(e){}},updateLast(price, quoteTime) {
+    const series = ss[0];
+    if (!series || spec.pct || !isN(price)) return;
+    const data = series.s.data;
+    const last = data[data.length - 1];
+    if (!last || (spec.interval && !isN(quoteTime))) return;
+    const time = spec.interval ? bucketTime(quoteTime, spec.interval) : last.time;
+    if (time < last.time || (spec.interval && quoteTime < last.observedAt)) return;
+    const next = time > last.time;
+    const bar = series.s.kind === 'candle'
+      ? next
+        ? { time, open: price, high: price, low: price, close: price }
+        : { time, open: last.open, high: Math.max(last.high, price), low: Math.min(last.low, price), close: price }
+      : { time, value: price };
+    if (spec.interval) bar.observedAt = quoteTime;
+    series.x.update(bar);
+    if (next) data.push(bar);
+    else data[data.length - 1] = bar;
+    if (!crosshairTime) show(null);
+  },setLevels(list){try{pls.forEach(p=>ss[0].x.removePriceLine(p));pls=(list||[]).map(l=>ss[0].x.createPriceLine({price:l.price,color:lc[l.color]||mut,lineWidth:1,lineStyle:2,axisLabelVisible:true,title:l.title}))}catch(e){}}}}
+export const TIMEFRAMES = { '4H': 14400, '1H': 3600, '30m': 1800, '15m': 900, '5m': 300, '1m': 60 };
+const bucketTime = (time, interval) => Math.floor(time / interval) * interval;
+
+function timeframeSeries(hist, range) {
+  const rows = range === '1m' ? hist.minuteBars?.['1m']
+    : range === '5m' || range === '15m' ? hist.minuteBars?.['5m']
+    : hist.intraday;
+  const interval = TIMEFRAMES[range];
+  const ordered = (rows || []).filter(r => Array.isArray(r) && isN(r[0]) && isN(r[4]))
+    .sort((a, b) => a[0] - b[0]);
+  const out = [];
+  for (const [timestamp, o, h, l, close] of ordered) {
+    const time = bucketTime(timestamp, interval);
+    const open = isN(o) ? o : close;
+    const high = isN(h) ? h : Math.max(open, close);
+    const low = isN(l) ? l : Math.min(open, close);
+    const last = out[out.length - 1];
+    if (last?.time === time) {
+      last.high = Math.max(last.high, high);
+      last.low = Math.min(last.low, low);
+      last.close = close;
+      last.observedAt = timestamp;
+    } else {
+      out.push({ time, open, high, low, close, observedAt: timestamp });
+    }
+  }
+  return out;
+}
+
+export function histSeries(hist,range){if(TIMEFRAMES[range])return timeframeSeries(hist,range);const intra=range==='1G'||range==='5G';let rows=(intra?hist.intraday:hist.daily)||[];
   rows=rows.filter(r=>Array.isArray(r)&&isN(r[0])&&isN(r[4])).sort((a,b)=>a[0]-b[0]);
   if(range==='1G'&&rows.length){const k=fKey.format(new Date(rows[rows.length-1][0]*1000));let r2=rows.filter(r=>fKey.format(new Date(r[0]*1000))===k);if(r2.length<3)r2=rows.slice(-20);rows=r2}
   else if(!intra){const days={'1M':31,'6M':183,'1A':366,'5A':1900}[range]||31;const from=(rows.length?rows[rows.length-1][0]:0)-days*86400;rows=rows.filter(r=>r[0]>=from)}
