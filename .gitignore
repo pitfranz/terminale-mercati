@@ -1,0 +1,12 @@
+_site/
+out/
+data/
+__pycache__/
+*.pyc
+previous_*.json
+requests.json
+issues.json
+issues_map.json
+changed.txt
+node_modules/
+.wrangler/

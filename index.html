@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a56d6">
+<meta name="description" content="Un mini terminale gratuito per capire come vanno i mercati e l'economia: prezzi, grafici, notizie, calendario, bias tecnico.">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="apple-touch-icon" href="assets/icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Terminale — i mercati e l'economia, in chiaro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+  <div class="top-row">
+    <h1>Terminale<small>I mercati e l'economia, spiegati in chiaro. Gratis.</small></h1>
+    <div class="upd"><span id="upd">Caricamento dati…</span><span id="liveTs" aria-live="off"></span><button class="linkbtn" id="btnFonti" type="button">Fonti dei dati</button></div>
+  </div>
+  <div id="stale"></div>
+  <div class="searchbox">
+    <label class="sr" for="q">Cerca un mercato, una notizia o un comando</label>
+    <input id="q" type="text" autocomplete="off" spellcheck="false" placeholder="Cerca: oro, nasdaq, btp, bce…   oppure un comando (GP, TOP, ECO, AIUTO)" role="combobox" aria-expanded="false" aria-controls="res" aria-autocomplete="list">
+    <kbd aria-hidden="true">/</kbd>
+    <ul class="results" id="res" role="listbox" hidden></ul>
+  </div>
+  <div id="help" class="helpbox" hidden></div>
+</header>
+</div>
+<nav class="sections" aria-label="Sezioni"><div class="wrap">
+  <a href="#oggi">Oggi</a><a href="#mercati">Mercati</a><a href="#bias" id="navBias" hidden>Bias</a><a href="#analisi" id="navAn" hidden>Analisi</a><a href="#notizie">Notizie</a><a href="#calendario">Calendario</a><a href="#macro">Macro</a><a href="#chiedi" id="navAsk" hidden>Chiedi</a>
+</div></nav>
+<main class="wrap">
+  <section class="blk" id="oggi"><h2>Il punto di oggi</h2><div id="punto" class="skel">Caricamento…</div><div id="tiles"></div><div id="gauges"></div><div class="watch" id="watch"></div></section>
+  <section class="blk" id="mercati"><h2>Mercati</h2><p class="sub">Tocca una riga per il grafico e i dettagli. Tocca le intestazioni per ordinare.</p><div id="tabs" class="tabs" role="tablist"></div><div id="mk" class="tablewrap"></div></section>
+  <section class="blk" id="bias" hidden><h2>Bias tecnico</h2><p class="sub">Una lettura tecnica automatica di tutti gli strumenti: tendenza giornaliera e settimanale, RSI e distanza dalla media a 200 giorni.</p><div class="abody"></div></section>
+  <section class="blk" id="analisi" hidden><h2>Analisi di mercato</h2><p class="sub">Strumenti per capire il clima dei mercati. Tutte indicazioni informative, non consigli d'investimento.</p><div id="anav" class="tabs"></div>
+    <div class="ablk" id="termometro" hidden><h3>Termometro Paura / Euforia</h3><div class="abody"></div></div>
+    <div class="ablk" id="forza" hidden><h3>Forza delle valute</h3><div class="abody"></div></div>
+    <div class="ablk" id="settori" hidden><h3>Mappa dei settori</h3><div class="abody"></div></div>
+    <div class="ablk" id="movers" hidden><h3>Titoli che si muovono di più</h3><div class="abody"></div></div>
+    <div class="ablk" id="cot" hidden><h3>Posizionamento dei grandi speculatori (COT)</h3><div class="abody"></div></div>
+    <div class="ablk" id="corr" hidden><h3>Correlazioni</h3><div class="abody"></div></div>
+    <div class="ablk" id="sessioni"><h3>Sessioni di mercato</h3><div class="abody"></div></div>
+    <div class="ablk" id="trimestrali" hidden><h3>Trimestrali in arrivo</h3><div class="abody"></div></div>
+    <div class="ablk" id="richieste" hidden><h3>Richieste in attesa</h3><div class="abody"></div></div></section>
+  <section class="blk" id="notizie"><h2>Notizie</h2><div id="news"></div></section>
+  <section class="blk" id="calendario"><h2>Calendario della settimana</h2><p class="sub">Orari in ora italiana. I pallini indicano quanto un evento può muovere i mercati.</p><div id="cal"></div></section>
+  <section class="blk" id="macro"><h2>Economia: i dati macro</h2><p class="sub">Le grandi cifre dell'economia, con l'ultimo valore disponibile.</p><div id="macroG"></div><div id="macroD"></div>
+    <div class="curve" id="curva"></div></section>
+  <section class="blk" id="chiedi" hidden><h2>Chiedi</h2><p class="sub">Fai una domanda sui dati di questa pagina. Risponde Claude, usando solo i numeri qui presenti.</p><div id="askbox"></div></section>
+  <footer>Le informazioni di questa pagina hanno scopo puramente informativo e non costituiscono consulenza finanziaria né un invito a investire. I prezzi possono essere in ritardo. <button class="linkbtn" type="button" id="btnFonti2">Vedi le fonti</button></footer>
+</main>
+
+<script src="vendor/lightweight-charts.standalone.production.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
