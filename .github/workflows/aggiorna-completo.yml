@@ -97,6 +97,21 @@ jobs:
         with:
           path: _site
 
+      - name: Attendi la disponibilità dell’artefatto Pages
+        if: steps.chg.outputs.deploy == 'true'
+        run: |
+          endpoint="repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=github-pages"
+          for attempt in {1..12}; do
+            count="$(gh api "$endpoint" --jq '.artifacts | length')"
+            if [[ "$count" -gt 0 ]]; then
+              exit 0
+            fi
+            echo "Artefatto Pages non ancora disponibile ($attempt/12)"
+            sleep 5
+          done
+          echo '::error::Artefatto github-pages assente dopo 60 secondi.'
+          exit 1
+
       - name: Pubblica
         id: deployment
         if: steps.chg.outputs.deploy == 'true'
