@@ -3,7 +3,7 @@
 //  2) Cloudflare Worker (opzionale, WORKER_URL in config.js): prezzi ogni minuto di azioni, valute, future.
 //  3) Coinbase (pubblico, CORS aperto): prezzi crypto ogni minuto, se non c'e' il Worker.
 // Per provare in locale: http://localhost:8000/?live=data/live.json  (&worker=URL, &cb=1).
-import {$, fHM, fmtWith, isN, safe} from './util.js';
+import {$, fHM, fmtWith, h, isN, safe} from './util.js';
 import {BYSYM, D, M} from './state.js';
 import {GH, WORKER_URL} from './config.js';
 import {LITE} from './data.js';
@@ -91,7 +91,7 @@ async function fetchJSON(url, ms = 12000) {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), ms);
   try {
-    const r = await fetch(url, { signal: ac.signal });
+    const r = await fetch(url, { signal: ac.signal, cache: url === LIVE_URL ? 'no-cache' : 'default' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return await r.json();
   } finally { clearTimeout(timer); }
@@ -137,33 +137,69 @@ function refreshUI() {
   FLASH.clear();
 }
 
-let shown = 0, timer = null, fails = 0, busy = false, lastTick = 0;
+let shown = 0, timer = null, fails = 0, busy = false;
+let nextPollAt = 0, countdown = null;
+
 function paintLabel() {
   if (shown) $('#liveTs').textContent = ' · Prezzi aggiornati alle ' + fmtWith(fHM, shown);
 }
 
+function paintCountdown() {
+  if (document.hidden) return;
+  if (busy) {
+    countdown.textContent = 'Controllo dei dati…';
+    return;
+  }
+  const seconds = Math.max(0, Math.ceil((nextPollAt - performance.now()) / 1000));
+  const minutes = Math.floor(seconds / 60);
+  const remainder = String(seconds % 60).padStart(2, '0');
+  const label = fails ? 'Riprovo tra ' : 'Prossimo controllo tra ';
+  countdown.textContent = label + minutes + ':' + remainder;
+}
+
 async function tick() {
-  if (document.hidden) { schedule(); return; }
-  if (busy) return;
-  busy = true; lastTick = Date.now();
+  if (busy || document.hidden) return;
+  clearTimeout(timer);
+  busy = true;
+  paintCountdown();
   let ok = false, ch = false, t = 0;
   const take = r => { ok = true; ch = ch || r.ch; t = Math.max(t, r.t); };
   try {
     if (LIVE_URL) { try { take(mergeLive(await fetchJSON(LIVE_URL))); } catch (e) { console.warn('live.json:', e.message); } }
     if (WORKER) { try { take(await pollWorker()); } catch (e) { console.warn('worker:', e.message); } }
     else if (CB_ON) { try { take(await pollCoinbase()); } catch (e) { console.warn('coinbase:', e.message); } }
-  } finally { busy = false; }
-  if (ok) { fails = 0; shown = Math.max(shown, t || Date.now()); paintLabel(); if (ch) refreshUI(); } else fails++;
-  schedule();
+    if (ok) {
+      fails = 0;
+      shown = Math.max(shown, t || Date.now());
+      paintLabel();
+      if (ch) refreshUI();
+    } else {
+      fails++;
+    }
+  } finally {
+    busy = false;
+    // Controllo ogni minuto, con attese di 2/4/5 minuti dopo errori consecutivi.
+    schedule(Math.min(300000, 60000 * 2 ** Math.min(fails, 3)));
+  }
 }
 
-function schedule() {
+function schedule(delay) {
   clearTimeout(timer);
-  timer = setTimeout(tick, Math.min(300000, 60000 * 2 ** Math.min(fails, 3)));   // 60 s, poi 2/4/5 min in caso di errori
+  nextPollAt = performance.now() + delay;
+  timer = setTimeout(tick, delay);
+  paintCountdown();
 }
 
 export function startLive() {
-  if (!LIVE_ON) return;
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - lastTick > 50000) tick(); });
-  setTimeout(tick, 1500);
+  if (!LIVE_ON || countdown) return;
+  countdown = h('span', { id: 'liveCountdown', class: 'pill', role: 'timer',
+    title: 'Controllo automatico ogni minuto. I dati cambiano quando le fonti pubblicano nuove rilevazioni.' });
+  $('#liveTs').after(countdown);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    if (performance.now() >= nextPollAt) tick();
+    else paintCountdown();
+  });
+  schedule(1500);
+  setInterval(paintCountdown, 1000);
 }
