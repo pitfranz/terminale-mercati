@@ -29,9 +29,8 @@ jobs:
     if: github.event_name != 'issues' || startsWith(github.event.issue.title, 'Aggiungi:') || github.event.label.name == 'richiesta'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      deploy: ${{ steps.chg.outputs.deploy }}
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -97,28 +96,40 @@ jobs:
         with:
           path: _site
 
-      - name: Attendi la disponibilità dell’artefatto Pages
+      - name: Conserva i dati per le risposte alle richieste
         if: steps.chg.outputs.deploy == 'true'
-        run: |
-          endpoint="repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=github-pages"
-          for attempt in {1..12}; do
-            count="$(gh api "$endpoint" --jq '.artifacts | length')"
-            if [[ "$count" -gt 0 ]]; then
-              exit 0
-            fi
-            echo "Artefatto Pages non ancora disponibile ($attempt/12)"
-            sleep 5
-          done
-          echo '::error::Artefatto github-pages assente dopo 60 secondi.'
-          exit 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: pages-issue-results
+          path: |
+            issues_map.json
+            _site/data/data.json
+          retention-days: 1
+          if-no-files-found: error
 
+  pubblica:
+    needs: completo
+    if: needs.completo.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Pubblica
         id: deployment
-        if: steps.chg.outputs.deploy == 'true'
         uses: actions/deploy-pages@v5
 
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: pages-issue-results
       - name: Rispondi alle richieste
-        if: steps.chg.outputs.deploy == 'true'
         env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           SITE_URL: ${{ steps.deployment.outputs.page_url }}
         run: python3 scripts/close_issues.py _site/data/data.json issues_map.json
