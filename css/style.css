@@ -373,3 +373,121 @@ table.mk .chg, .ev .tm, .ev .vals { font-family: var(--mono); }
   .mgrid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 175px), 1fr)); }
   .panel { border-radius: 0; }
 }
+
+/* Navigazione, mercati e termometri */
+nav.sections .wrap, #anav, #tabs {
+  flex-wrap: wrap;
+  justify-content: center;
+  overflow: visible;
+}
+nav.sections .wrap { gap: 0 5px; }
+#anav, #tabs { gap: 7px; padding-bottom: 14px; }
+#anav .chip, #tabs button {
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px 15px;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.25;
+}
+#anav a.chip { display: inline-flex; align-items: center; justify-content: center; }
+#mk > .ctl {
+  justify-content: center;
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--glass);
+}
+#mk .seg { padding: 3px; gap: 3px; border-radius: 12px; background: var(--card); }
+#mk .seg button { border-radius: 8px; padding-inline: 14px; }
+#mk .seg button[aria-pressed="true"] {
+  color: #261520;
+  background: linear-gradient(110deg, #ffd476, #ffab80 67%, #f494c4);
+  box-shadow: inset 0 0 0 1px #ffddad;
+  font-weight: 700;
+}
+#mercati #tabs button[aria-selected="true"] { box-shadow: inset 0 0 0 1px var(--acc); font-weight: 700; }
+
+#mk { overflow: clip; }
+#mk table.mk { width: 100%; font-size: clamp(12px, 1.14vw, 14px); }
+#mk table.mk :is(th, td) { padding-inline: clamp(3px, .5vw, 8px); }
+#mk table.mk th button { padding-inline: 0; white-space: normal; line-height: 1.15; }
+#mk table.mk :is(th, td):nth-child(2) { text-align: left; }
+#mk table.mk th:nth-child(2) button { text-align: left; }
+#mk table.mk .st { width: 1%; }
+#mk table.mk .sp { width: 1%; }
+#mk table.mk td.sp svg { width: clamp(45px, 6vw, 80px); }
+#mk table.mk .nm { overflow-wrap: anywhere; }
+#mk table.mk .sy { overflow-wrap: anywhere; }
+#mk table.mk .bp { font-size: 11px; padding-inline: 6px; }
+
+#tiles > .tiles {
+  max-width: 1100px;
+  margin-inline: auto;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+#tiles .tile { align-items: center; text-align: center; }
+#tiles .tile .bp { white-space: normal; justify-content: center; }
+#gauges > .gt {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+#gauges .gcard { flex: 0 1 min(42%, 248px); align-items: center; text-align: center; }
+#gauges .gcard svg { margin-inline: auto; }
+#gauges .gcard .p { font-size: clamp(14px, 2vw, 21px); }
+
+#termometro > .abody { display: grid; gap: 12px; }
+#termometro .termo {
+  grid-template-columns: minmax(0, .9fr) minmax(0, 2fr);
+  align-items: center;
+  padding: clamp(13px, 2vw, 24px);
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+#termometro .termo > div:first-child { text-align: center; }
+#termometro .termo:has(> div:last-child:empty) { grid-template-columns: minmax(0, 1fr); }
+#termometro .termo > div:last-child:empty { display: none; }
+#termometro .comp { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+#termometro .cp {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+#termometro .hs svg { display: block; }
+#termometro .abody > :is(p:has(+ .hs), h4:has(+ .termo)) {
+  margin: 0 !important;
+  padding: 11px 16px 5px;
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+#termometro .abody > :is(p + .hs, h4 + .termo) {
+  margin-top: -12px;
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+#termometro .abody > p + .hs { padding: 6px 16px 13px; }
+
+@media (max-width: 760px) {
+  #mk table.mk :is(td, th).sp { display: none; }
+  #termometro .termo { grid-template-columns: minmax(0, 1fr); gap: 13px; }
+  #termometro .termo > div:first-child svg { max-width: 215px !important; }
+}
+@media (max-width: 620px) {
+  #tiles > .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #gauges .gcard { flex-basis: calc(50% - 6px); }
+  nav.sections a { padding-inline: 10px; }
+  #mk table.mk :is(td, th).oytd { display: none; }
+}
+@media (max-width: 400px) {
+  #termometro .comp { grid-template-columns: minmax(0, 1fr); }
+  #mk .seg button { padding-inline: 10px; }
+}
