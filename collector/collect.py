@@ -558,17 +558,27 @@ def quote_stats(meta, daily, intr=None):
 CORE_DAILY = {}   # symbol -> (daily bars, gmt) of this run (used by the analysis sections)
 
 
+def optional_intraday(sym, span, interval, limit):
+    try:
+        return bars(yahoo_chart(sym, span, interval))[-limit:]
+    except Exception as e:
+        log("  intraday fail", sym, interval, e)
+        return []
+
+
+def packed_bars(rows):
+    return [[b[0]] + [rp(x) for x in b[1:5]] + [int(b[5]) if b[5] is not None else None] for b in rows]
+
+
 def build_market(sym, name, group, desc, check=None):
     d = yahoo_chart(sym, "5y", "1d")
     meta = d.get("meta") or {}
     daily = bars(d)
     if len(daily) < 2:
         raise RuntimeError("too few daily bars")
-    try:
-        intr = bars(yahoo_chart(sym, "5d", "30m"))
-    except Exception as e:  # intraday is optional
-        log("  intraday fail", sym, e)
-        intr = []
+    intr = optional_intraday(sym, "5d", "30m", 240)
+    five_min = optional_intraday(sym, "5d", "5m", 1440)
+    one_min = optional_intraday(sym, "1d", "1m", 720)
     st = quote_stats(meta, daily, intr)
     price, prev = st["price"], st["prev"]
     if check and abs(price / check - 1) > 0.3:
@@ -590,8 +600,9 @@ def build_market(sym, name, group, desc, check=None):
         log("  tech fail", sym, e)
     hist = {
         "symbol": sym,
-        "daily": [[b[0]] + [rp(x) for x in b[1:5]] + [int(b[5]) if b[5] is not None else None] for b in daily],
-        "intraday": [[b[0]] + [rp(x) for x in b[1:5]] + [int(b[5]) if b[5] is not None else None] for b in intr],
+        "daily": packed_bars(daily),
+        "intraday": packed_bars(intr),
+        "minuteBars": {"1m": packed_bars(one_min), "5m": packed_bars(five_min)},
     }
     return m, hist, daily, st["gmt"]
 
