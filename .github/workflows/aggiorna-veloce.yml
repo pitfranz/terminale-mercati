@@ -1,0 +1,73 @@
+name: Aggiorna prezzi (veloce)
+
+# Ogni 5 minuti (il minimo consentito da GitHub; con molto traffico puo' partire in ritardo).
+# Scarica SOLO prezzi, notizie e calendario e li scrive in `live.json` sul branch `live`.
+# Il branch contiene un solo commit che viene sovrascritto: la cronologia non cresce mai.
+# Nessuna installazione: usa il Python gia' presente sul runner.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: live
+  cancel-in-progress: false
+
+jobs:
+  veloce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: collector
+
+      - name: Prepara il branch live
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin live >/dev/null 2>&1; then
+            git fetch --depth=1 origin live
+            git worktree add -B live ../live FETCH_HEAD
+            echo "LIVE_EXISTS=1" >> "$GITHUB_ENV"
+          else
+            git worktree add --detach ../live
+            git -C ../live checkout -q --orphan live
+            git -C ../live rm -rfq . || true
+            echo "LIVE_EXISTS=0" >> "$GITHUB_ENV"
+          fi
+
+      - name: Raccogli prezzi, notizie e calendario
+        env:
+          OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          owner="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
+          repo="$(echo "$REPO_NAME" | tr '[:upper:]' '[:lower:]')"
+          if [ "$repo" = "$owner.github.io" ]; then
+            url="https://$owner.github.io/data/symbols.json"
+          else
+            url="https://$owner.github.io/$repo/data/symbols.json"
+          fi
+          curl -fsSL --retry 2 --max-time 30 "$url" -o symbols.json || { echo "symbols.json non ancora pubblicato: uso l'elenco base"; rm -f symbols.json; }
+          args=(--mode fast --out ../live)
+          if [ -s symbols.json ]; then args+=(--symbols symbols.json); fi
+          python3 collector/collect.py "${args[@]}"
+
+      - name: Aggiorna il branch live (solo se qualcosa e' cambiato)
+        run: |
+          cd ../live
+          if [ -z "$(git status --porcelain -- live.json)" ]; then
+            echo "live.json invariato: niente da pubblicare"
+            exit 0
+          fi
+          git add live.json
+          if [ "$LIVE_EXISTS" = "1" ]; then
+            git commit -q --amend --reset-author -m "live"
+          else
+            git commit -q -m "live"
+          fi
+          git push --force origin live

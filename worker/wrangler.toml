@@ -1,0 +1,7 @@
+name = "terminale-prezzi"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+[vars]
+# Per limitare l'uso al tuo sito, metti qui il suo indirizzo, ad es. "https://mario.github.io"
+ALLOWED_ORIGIN = "*"

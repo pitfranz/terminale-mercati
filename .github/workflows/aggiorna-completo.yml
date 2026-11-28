@@ -1,0 +1,135 @@
+name: Aggiorna tutto (completo)
+
+# Ogni ora nei giorni feriali, ogni 3 ore nel fine settimana; subito quando cambi i file o apri una richiesta.
+# Raccoglie TUTTO (storici, analisi, macro...) e ripubblica il sito solo se qualcosa e' cambiato davvero.
+on:
+  schedule:
+    - cron: "7 * * * 1-5"
+    - cron: "7 */3 * * 0,6"
+  workflow_dispatch:
+  push:
+    branches: [main]
+  issues:
+    types: [opened, labeled]
+
+permissions:
+  actions: read
+  contents: read
+  pages: write
+  id-token: write
+  issues: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  completo:
+    # Per le issue: solo quelle di richiesta ("Aggiungi: ..." oppure etichetta "richiesta")
+    if: github.event_name != 'issues' || startsWith(github.event.issue.title, 'Aggiungi:') || github.event.label.name == 'richiesta'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      deploy: ${{ steps.chg.outputs.deploy }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Scarica i dati gia' pubblicati (servono per non perdere nulla e per capire cosa e' cambiato)
+        env:
+          OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          owner="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
+          repo="$(echo "$REPO_NAME" | tr '[:upper:]' '[:lower:]')"
+          if [ "$repo" = "$owner.github.io" ]; then
+            base="https://$owner.github.io/data"
+          else
+            base="https://$owner.github.io/$repo/data"
+          fi
+          echo "Provo a scaricare da $base"
+          for f in data.json manifest.json; do
+            out="previous_$f"
+            curl -fsSL --retry 2 --max-time 60 "$base/$f" -o "$out" || { echo "$f non disponibile (primo avvio?)"; rm -f "$out"; continue; }
+            python3 -c "import json,sys;json.load(open(sys.argv[1]))" "$out" || rm -f "$out"
+          done
+          ls -la previous_* 2>/dev/null || true
+
+      - name: Richieste di nuovi titoli (issue aperte)
+        run: |
+          gh label create richiesta --force --color 0a56d6 --description "Richiesta di aggiungere un titolo al terminale"
+          gh issue list --state open --limit 100 --json number,title,body,labels > issues.json
+          python3 scripts/issues_to_requests.py issues.json requests.json issues_map.json
+
+      - name: Raccogli i dati
+        run: |
+          args=(--mode full --out data --requests requests.json --changed-out changed.txt)
+          if [ -f previous_data.json ]; then args+=(--previous previous_data.json); fi
+          if [ -f previous_manifest.json ]; then args+=(--previous-manifest previous_manifest.json); fi
+          python3 collector/collect.py "${args[@]}"
+
+      - name: Decidi se ripubblicare
+        id: chg
+        run: |
+          n="$(grep -c . changed.txt || true)"
+          if [ "${n:-0}" -gt 0 ] || [ "$GITHUB_EVENT_NAME" != "schedule" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"; echo "File cambiati: ${n:-0} -> pubblico"
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"; echo "Nessun cambiamento rispetto al sito pubblicato: salto la pubblicazione"
+          fi
+
+      - name: Prepara il sito
+        if: steps.chg.outputs.deploy == 'true'
+        run: bash scripts/build.sh data
+
+      - uses: actions/configure-pages@v6
+        if: steps.chg.outputs.deploy == 'true'
+
+      - uses: actions/upload-pages-artifact@v5
+        if: steps.chg.outputs.deploy == 'true'
+        with:
+          path: _site
+
+      - name: Conserva i dati per le risposte alle richieste
+        if: steps.chg.outputs.deploy == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pages-issue-results
+          path: |
+            issues_map.json
+            _site/data/data.json
+          retention-days: 1
+          if-no-files-found: error
+
+  pubblica:
+    needs: completo
+    if: needs.completo.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Pubblica
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: pages-issue-results
+      - name: Rispondi alle richieste
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SITE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: python3 scripts/close_issues.py _site/data/data.json issues_map.json

@@ -1,0 +1,54 @@
+import {BYSYM, D, M, sample} from './state.js';
+import {EMAP, ensureDir, liteData, loadHist} from './data.js';
+import {fuzzy, searchAll, searchMarkets} from './search.js';
+import {histSeries} from './charts.js';
+import {$, h, isN} from './util.js';
+import {trendItems} from './analysis.js';
+
+export const SYS=`Sei l'assistente di una pagina web italiana che mostra dati su mercati ed economia, per persone comuni (non esperte).
+Regole: rispondi SEMPRE in italiano, con parole semplici e frasi brevi, spiegando i termini tecnici. Usa SOLO i dati che ottieni dagli strumenti della pagina (cerca_mercati, serie_storica, notizie, macro, calendario): non inventare numeri e non usare conoscenze esterne per cifre recenti. Cita i numeri con la data a cui si riferiscono. Se un dato manca, dillo chiaramente. Non dare mai consigli di investimento personalizzati (cosa comprare o vendere): spiega che le informazioni sono a scopo informativo e non sono consulenza finanziaria. Il bias tecnico (strumento bias) è un'indicazione automatica basata su medie mobili, RSI e MACD: è solo informativo, non una previsione né un consiglio; ricordalo in modo discreto quando ne parli. Per i dati COT (strumento cot) spiega che mostrano le posizioni dei grandi speculatori. Per titoli che non conosci usa cerca_titolo. Sii conciso (massimo 150 parole), senza markdown.`;
+export function downsample(a,n){if(a.length<=n)return a;const o=[];for(let i=0;i<n;i++)o.push(a[Math.round(i*(a.length-1)/(n-1))]);return o}
+export const argOf=a=>a&&typeof a==='object'?a:{};
+export async function resolveSym(q){if(BYSYM[q])return EMAP.get(q)||{sym:q,tier:'core'};await ensureDir().catch(()=>{});const e=EMAP.get(q);if(e)return e;return searchAll(q,1)[0]||null}
+export const TOOLS=[
+ {name:'cerca_mercati',description:'Cerca mercati (indici, materie prime, valute, tassi, crypto, azioni) per nome o simbolo e restituisce prezzo e variazioni. Query vuota = elenco sintetico.',inputSchema:{type:'object',properties:{query:{type:'string',description:'Nome o simbolo, es. oro, nasdaq, BTC'}},required:['query']},
+  execute:async i=>{const q=String(argOf(i).query||'');const l=q?searchMarkets(q,12):M.slice(0,40);return l.map(m=>({symbol:m.symbol,nome:m.name,gruppo:m.group,valuta:m.currency,prezzo:m.price,var_giorno_pct:m.changePct,var_1sett_pct:m.chg1w,var_1mese_pct:m.chg1m,var_da_inizio_anno_pct:m.chgYtd,var_1anno_pct:m.chg1y,max52:m.high52,min52:m.low52,aggiornato:m.marketTime,descrizione:m.desc}))}},
+ {name:'serie_storica',description:'Serie storica dei prezzi di chiusura di un simbolo o titolo (max 120 punti). range: 1G, 5G (solo strumenti principali), 1M, 6M, 1A, 5A (5A solo strumenti principali).',inputSchema:{type:'object',properties:{symbol:{type:'string'},range:{type:'string',enum:['1G','5G','1M','6M','1A','5A']}},required:['symbol']},
+  execute:async i=>{i=argOf(i);const q=String(i.symbol||'');const r=['1G','5G','1M','6M','1A','5A'].includes(i.range)?i.range:'1M';const e=await resolveSym(q);if(!e)return {errore:'simbolo non trovato'};
+    if(e.tier==='core'&&BYSYM[e.sym]){const m=BYSYM[e.sym];const hist=await loadHist(m.file);const s=histSeries(hist,r);const intra=r==='1G'||r==='5G';return {symbol:m.symbol,nome:m.name,range:r,punti:downsample(s,120).map(p=>[new Date(p.time*1000).toISOString().slice(0,intra?16:10),p.close])}}
+    if(e.tier==='lite'){if(r==='1G'||r==='5G')return {errore:'per questo titolo ci sono solo chiusure giornaliere'};const s=await liteData(e.sym);if(!s)return {errore:'dati non disponibili'};const cl=(s.closes||[]).filter(x=>isN(x[1]));const last=cl.length?cl[cl.length-1][0]:0;const days={'1M':31,'6M':183,'1A':400,'5A':400}[r];
+      return {symbol:e.sym,nome:s.name,range:r==='5A'?'1A (massimo disponibile)':r,punti:downsample(cl.filter(x=>x[0]>=last-days*86400),120).map(p=>[new Date(p[0]*1000).toISOString().slice(0,10),p[1]])}}
+    return {errore:'titolo presente solo nell\'elenco di ricerca, non ancora nel terminale'}}},
+ {name:'bias',description:'Bias tecnico automatico (giornaliero e settimanale) di uno strumento: punteggio da -100 a +100, motivi, RSI, livelli chiave. Solo informativo.',inputSchema:{type:'object',properties:{symbol:{type:'string'}},required:['symbol']},
+  execute:async i=>{const e=await resolveSym(String(argOf(i).symbol||''));if(!e)return {errore:'simbolo non trovato'};const av='Indicazione tecnica automatica, non è un consiglio d\'investimento.';
+    if(e.tier==='core'&&BYSYM[e.sym]){const m=BYSYM[e.sym],t=m.tech;if(!t||!t.bias)return {errore:'bias non disponibile per questo strumento'};return {symbol:m.symbol,nome:m.name,giornaliero:t.bias.daily,settimanale:t.bias.weekly,rsi14:t.rsi14,distanza_sma200_pct:t.distSma200Pct,atr_pct:t.atrPct,livelli:t.levels,range_atteso:t.expectedRange,avviso:av}}
+    if(e.tier==='lite'){const s=await liteData(e.sym);return s&&s.bias?{symbol:e.sym,nome:s.name,giornaliero:s.bias.daily,settimanale:s.bias.weekly,avviso:av}:{errore:'bias non disponibile'}}return {errore:'titolo non ancora nel terminale'}}},
+ {name:'cot',description:'Posizionamento dei grandi speculatori (CFTC COT): posizione netta, variazione, indice 0-100 sugli ultimi 3 anni e ultime 12 settimane. Senza market elenca tutti.',inputSchema:{type:'object',properties:{market:{type:'string'}}},
+  execute:async i=>{const q=String(argOf(i).market||'');const l=(D.cot||[]).filter(c=>!q||fuzzy(q,c.market+' '+(c.symbols||[]).join(' '))>0);if(!l.length)return {errore:'nessun dato COT per questo mercato',mercati:(D.cot||[]).map(c=>c.market)};
+    return l.slice(0,q?3:20).map(c=>({mercato:c.market,data:c.date,posizione_netta:c.netSpec,variazione_settimanale:c.netSpecChg,long_pct:c.longPct,indice_cot_3anni:c.cotIndex3y,nota:c.note,ultime_settimane:q?(c.history||[]).slice(-12):undefined}))}},
+ {name:'sentiment',description:'Termometro Paura/Euforia (0-100) con componenti, e indice paura/avidità crypto.',inputSchema:{type:'object',properties:{}},
+  execute:async()=>({termometro:D.sentiment?{punteggio:D.sentiment.score,etichetta:D.sentiment.label,componenti:D.sentiment.components,ultimi_giorni:(D.sentiment.history||[]).slice(-7)}:null,crypto:D.cryptoFng?{valore:D.cryptoFng.value,etichetta:D.cryptoFng.label}:null,forza_valute:D.currencyStrength||null})},
+ {name:'movers',description:'Titoli che si sono mossi di più (migliori, peggiori, più scambiati) per USA ed Europa, e titoli in tendenza.',inputSchema:{type:'object',properties:{}},
+  execute:async()=>{const f=l=>(l||[]).slice(0,8).map(r=>({symbol:r[0],nome:r[1],prezzo:r[2],var_pct:r[3]}));const g=x=>x?{migliori:f(x.gainers),peggiori:f(x.losers),piu_scambiati:f(x.active)}:null;return {usa:g(D.movers&&D.movers.us),europa:g(D.movers&&D.movers.eu),in_tendenza:trendItems().slice(0,10).map(t=>t.name)}}},
+ {name:'cerca_titolo',description:'Cerca un titolo, ETF, crypto, future o valuta per nome o simbolo tra migliaia di strumenti (anche quelli non ancora nel terminale).',inputSchema:{type:'object',properties:{query:{type:'string'}},required:['query']},
+  execute:async i=>{await ensureDir().catch(()=>{});return searchAll(String(argOf(i).query||''),10).map(e=>({symbol:e.sym,nome:e.name,tipo:e.type,borsa:e.exch,livello:e.tier==='core'?'nel terminale (dati completi)':e.tier==='lite'?'nel terminale (dati giornalieri)':'solo elenco'}))}},
+ {name:'notizie',description:'Cerca tra le notizie della pagina per parola chiave (titolo e riassunto).',inputSchema:{type:'object',properties:{query:{type:'string'},max:{type:'number'}},required:['query']},
+  execute:async i=>{i=argOf(i);const q=String(i.query||'');const max=Math.min(15,Math.max(1,+i.max||8));return (D.news||[]).filter(n=>!q||fuzzy(q,n.title+' '+(n.summary||''))>0).slice(0,max).map(n=>({titolo:n.title,fonte:n.source,data:n.published,categoria:n.category,lingua:n.lang,riassunto:n.summary}))}},
+ {name:'macro',description:'Dati macroeconomici. Senza id: elenco serie con ultimo valore. Con id: ultimi 24 punti.',inputSchema:{type:'object',properties:{id:{type:'string'}}},
+  execute:async i=>{i=argOf(i);const ms=D.macro||[];if(i.id){const m=ms.find(x=>x.id===i.id);return m?{id:m.id,nome:m.name,paese:m.country,unita:m.unit,frequenza:m.frequency,fonte:m.source,ultimo:m.latest,precedente:m.previous,punti:(m.points||[]).slice(-24)}:{errore:'id non trovato',ids:ms.map(x=>x.id)}}
+    return ms.map(m=>({id:m.id,nome:m.name,paese:m.country,unita:m.unit,ultimo:m.latest,precedente:m.previous,descrizione:m.desc}))}},
+ {name:'calendario',description:'Eventi economici della settimana (data in UTC ISO, impatto High/Medium/Low, previsto/precedente/effettivo). Ora attuale inclusa.',inputSchema:{type:'object',properties:{}},
+  execute:async()=>({adesso:new Date().toISOString(),eventi:(D.calendar||[]).map(e=>({data:e.date,paese:e.country,titolo:e.title,impatto:e.impact,previsto:e.forecast,precedente:e.previous,effettivo:e.actual}))})}];
+export function showAskPanel(){$('#chiedi').hidden=false;$('#navAsk').hidden=false;const box=$('#askbox');let msgs=[],busy=false;
+  const out=h('div',{class:'ansbox','aria-live':'polite'}),ta=h('textarea',{'aria-label':'La tua domanda',placeholder:'Scrivi una domanda, ad esempio: Com\'è andato l\'oro questa settimana?',maxlength:'500'});
+  const go=h('button',{class:'btn',type:'button',text:'Chiedi'});
+  const ask=async q=>{q=q.trim();if(!q||busy||!sample)return;busy=true;go.disabled=true;out.textContent='Sto cercando nei dati…';
+    const m2=msgs.length?[...msgs,{role:'user',content:q}]:[{role:'user',content:SYS+'\n\nDomanda: '+q}];
+    try{const res=await sample(m2,{model:'claude-sonnet-5-5',modelTier:'default',cache:false,onText:({text})=>{out.textContent=text},tools:TOOLS});
+      const txt=(res&&res.text)||out.textContent;out.textContent=txt;msgs=[...m2,{role:'assistant',content:txt}].slice(-8);if(msgs[0].role!=='user')msgs=msgs.slice(1);
+    }catch(e){const c=e&&e.code;if(c==='not_granted'){$('#chiedi').hidden=true;$('#navAsk').hidden=true}else if(c==='rate_limited')out.textContent='Troppe richieste in poco tempo: riprova tra poco.';else out.textContent='Non sono riuscito a rispondere in questo momento. Riprova tra qualche istante.';console.warn(e)}
+    busy=false;go.disabled=false};
+  go.addEventListener('click',()=>{const q=ta.value;ta.value='';ask(q)});
+  box.replaceChildren(h('div',{class:'ask'},h('div',{class:'chips'},["Com'è andato l'oro questa settimana?",'Perché si parla della BCE?','Cosa esce oggi nel calendario?','Spiegami il VIX'].map(s=>h('button',{class:'chip',type:'button',text:s,onclick:()=>{ta.value=s;ta.focus()}}))),
+    ta,h('div',{class:'row'},go,h('button',{class:'btn sec',type:'button',text:'Nuova conversazione',onclick:()=>{msgs=[];out.textContent='';ta.value=''}})),out,
+    h('p',{class:'mut',style:'font-size:12px;margin:10px 0 0',text:'Risposte generate da un\'intelligenza artificiale sui dati della pagina: possono contenere errori. Solo informazioni, nessuna consulenza finanziaria.'})))}
